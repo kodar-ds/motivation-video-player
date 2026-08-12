@@ -11,6 +11,8 @@ import yt_dlp
 import uuid
 import logging
 import urllib.request
+import asyncio
+import requests
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -112,6 +114,119 @@ DEFAULT_VIDEOS = [
 # Initialize JSON databases
 load_json_file(VIDEOS_FILE, DEFAULT_VIDEOS)
 load_json_file(DOWNLOADS_FILE, [])
+
+# --- Automatic motivational feed via Pexels (free, royalty-free stock video API) ---
+# This replaces manually pasting in video links: the server periodically searches
+# Pexels for motivational/success/workout footage and appends fresh clips straight
+# into videos.json on its own.
+PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "").strip()
+PEXELS_SEARCH_TERMS = [
+    "motivation",
+    "success mindset",
+    "workout motivation",
+    "inspirational speech",
+    "discipline hustle",
+    "overcoming challenge",
+]
+PEXELS_POLL_MINUTES = int(os.environ.get("PEXELS_POLL_MINUTES", "30"))
+PEXELS_PER_FETCH = int(os.environ.get("PEXELS_PER_FETCH", "4"))
+
+
+def fetch_pexels_clips(query: str, per_page: int = 4):
+    """Query Pexels' video search API for a batch of royalty-free clips."""
+    if not PEXELS_API_KEY:
+        return []
+    try:
+        resp = requests.get(
+            "https://api.pexels.com/videos/search",
+            headers={"Authorization": PEXELS_API_KEY},
+            params={"query": query, "per_page": per_page, "orientation": "portrait"},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        logger.error(f"Pexels fetch failed for '{query}': {e}")
+        return []
+
+    results = []
+    for item in data.get("videos", []):
+        video_files = item.get("video_files", [])
+        if not video_files:
+            continue
+        # Prefer a reasonable HD mp4 (avoid multi-hundred-MB 4K files)
+        candidates = [f for f in video_files if f.get("file_type") == "video/mp4"]
+        candidates.sort(key=lambda f: f.get("width") or 0)
+        chosen = next((f for f in candidates if (f.get("width") or 0) >= 720), None)
+        chosen = chosen or (candidates[-1] if candidates else None)
+        if not chosen:
+            continue
+
+        creator = item.get("user", {}).get("name", "Unknown creator")
+        results.append({
+            "url": chosen["link"],
+            "title": f"{query.title()} — by {creator}",
+            "description": f"Royalty-free clip via Pexels (search: {query}).",
+        })
+    return results
+
+
+def auto_populate_feed(per_term: int = None):
+    """Pull fresh clips for each search term and merge any new ones into the feed."""
+    per_term = per_term or PEXELS_PER_FETCH
+    videos = load_json_file(VIDEOS_FILE, DEFAULT_VIDEOS)
+    existing_urls = {v["url"] for v in videos}
+    added = 0
+    for term in PEXELS_SEARCH_TERMS:
+        for clip in fetch_pexels_clips(term, per_page=per_term):
+            if clip["url"] in existing_urls:
+                continue
+            videos.append({
+                "id": str(uuid.uuid4()),
+                "url": clip["url"],
+                "title": clip["title"],
+                "description": clip["description"],
+            })
+            existing_urls.add(clip["url"])
+            added += 1
+    if added:
+        save_json_file(VIDEOS_FILE, videos)
+        logger.info(f"Auto-added {added} new motivational clips from Pexels.")
+    return added
+
+
+async def pexels_background_loop():
+    await asyncio.sleep(5)  # small delay so the app finishes booting first
+    while True:
+        try:
+            auto_populate_feed()
+        except Exception as e:
+            logger.error(f"Background feed refresh failed: {e}")
+        await asyncio.sleep(PEXELS_POLL_MINUTES * 60)
+
+
+@app.on_event("startup")
+async def start_background_tasks():
+    if PEXELS_API_KEY:
+        asyncio.create_task(pexels_background_loop())
+        logger.info(f"Auto motivational feed enabled - refreshing every {PEXELS_POLL_MINUTES} min.")
+    else:
+        logger.warning(
+            "PEXELS_API_KEY is not set. Set it as an environment variable to enable the "
+            "automatic motivational video feed. Falling back to manually-added videos only."
+        )
+
+
+@app.post("/api/videos/refresh-feed")
+def refresh_feed():
+    """Manually trigger an immediate feed refresh instead of waiting for the timer."""
+    if not PEXELS_API_KEY:
+        raise HTTPException(
+            status_code=400,
+            detail="PEXELS_API_KEY is not configured on the server. Get a free key at pexels.com/api and set it as an environment variable."
+        )
+    added = auto_populate_feed()
+    return {"message": "Fetched fresh motivational clips from Pexels", "added": added}
 
 @app.get("/api/quote")
 def get_daily_quote():

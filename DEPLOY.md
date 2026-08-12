@@ -57,6 +57,21 @@ If you just want this playing on a second monitor or tablet at home to fuel your
 
 ---
 
+## 🎬 Automatic Motivational Feed (Pexels)
+
+The app can automatically fill your feed with royalty-free motivational/workout/success clips on its own — no manually pasted links needed.
+
+1. Get a free API key at [pexels.com/api](https://www.pexels.com/api/) (takes about a minute, no credit card).
+2. Set it as an environment variable named `PEXELS_API_KEY`:
+   - **On Render:** Dashboard → your service → **Environment** tab → **Add Environment Variable** → key `PEXELS_API_KEY`, value = your key.
+   - **Locally:** `export PEXELS_API_KEY=your_key_here` before running `uvicorn`.
+3. Restart/redeploy the service. On startup, the server begins pulling fresh clips every 30 minutes automatically (configurable via `PEXELS_POLL_MINUTES`).
+4. Use the **"Get More Motivation"** button in the app to trigger an immediate refresh instead of waiting.
+
+Without a key set, the app still works fine — it just falls back to only the default/manually-added videos.
+
+---
+
 ## 📝 Included Project Requirements File
 
 We have created a `requirements.txt` in your project folder containing all necessary dependencies for deployment:

@@ -24,12 +24,78 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const refreshDownloadsBtn = document.getElementById('refresh-downloads');
     const clearFailedBtn = document.getElementById('clear-failed-btn');
+    const refreshFeedBtn = document.getElementById('refresh-feed-btn');
     const downloadsList = document.getElementById('downloads-list');
     const playlistList = document.getElementById('playlist-list');
     const toastContainer = document.getElementById('toast-container');
 
     // Init App
     init();
+
+    // --- Auto-download helpers ---
+    // Instagram (and most non-.mp4 sources) can't reliably be embedded in an iframe -
+    // Instagram blocks embedding on most posts. So instead of making the user click
+    // "Save & Download" by hand, we kick off the download automatically in the
+    // background as soon as a video is added or comes up in rotation, and swap the
+    // player over to the local file the moment it's ready.
+
+    function findCompletedDownload(url) {
+        return downloads.find(dl => dl.url === url && dl.status === 'completed');
+    }
+
+    function isAlreadyTrackedDownload(url) {
+        return downloads.some(dl => dl.url === url && (dl.status === 'completed' || dl.status === 'downloading'));
+    }
+
+    async function ensureDownloaded(url, title) {
+        if (isAlreadyTrackedDownload(url)) return;
+        try {
+            await fetch('/api/download', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url, title })
+            });
+            fetchDownloads();
+        } catch (err) {
+            console.error('Auto-download trigger failed', err);
+        }
+    }
+
+    // Proactively start downloading every non-direct video in the playlist so the
+    // library fills in on its own and playback doesn't stall waiting on one at a time.
+    function prefetchPlaylistDownloads() {
+        playlist.forEach(video => {
+            if (isDirectVideoUrl(video.url)) return;
+            ensureDownloaded(video.url, video.title);
+        });
+    }
+
+    function isDirectVideoUrl(url) {
+        return url.endsWith('.mp4') || url.includes('.mp4?') || url.includes('googleapis.com') || url.includes('raw.githubusercontent');
+    }
+
+    // If the currently-showing video was being embedded (or waiting on a download)
+    // and its local copy just finished downloading, swap the player over to it live
+    // so playback continues seamlessly instead of sitting on a broken/blocked embed.
+    function maybeSwapInLocalCopy() {
+        if (currentVideoIndex === -1) return;
+        const video = playlist[currentVideoIndex];
+        if (!video || isDirectVideoUrl(video.url)) return;
+        if (!videoPlayer.classList.contains('hidden')) return; // already on a playable video
+
+        const localCopy = findCompletedDownload(video.url);
+        if (localCopy) {
+            embedContainer.classList.add('hidden');
+            embedContainer.innerHTML = '';
+            videoPlayer.classList.remove('hidden');
+            videoPlayer.src = localCopy.local_path;
+            videoPlayer.load();
+            videoPlayer.play().catch(e => console.log(e));
+            playPauseBtn.innerHTML = '<i class="fas fa-pause"></i> Pause';
+            isPlaying = true;
+            showToast(`Now playing: ${video.title}`, 'success');
+        }
+    }
 
     function init() {
         fetchQuote();
@@ -38,6 +104,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Start checking downloads in background every 5 seconds
         setInterval(fetchDownloads, 5000);
+        // Periodically re-scan the playlist for anything still missing a local copy
+        // (covers videos added by others / added while the tab was open)
+        setInterval(prefetchPlaylistDownloads, 15000);
+        // Pick up new clips the server auto-fetches from Pexels in the background
+        setInterval(fetchPlaylist, 60000);
+
+        refreshFeedBtn.addEventListener('click', triggerFeedRefresh);
 
         // Event Listeners
         prevBtn.addEventListener('click', playPrevious);
@@ -86,6 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok) {
                 playlist = await res.json();
                 renderPlaylist();
+                prefetchPlaylistDownloads();
                 if (playlist.length > 0 && currentVideoIndex === -1) {
                     // Play random or first video to start
                     currentVideoIndex = Math.floor(Math.random() * playlist.length);
@@ -108,19 +182,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Check source and display type (Direct MP4 vs Embedded Platforms)
         const url = video.url;
-        const isDirectVideo = url.endsWith('.mp4') || url.includes('.mp4?') || url.includes('googleapis.com') || url.includes('raw.githubusercontent');
+        const isDirectVideo = isDirectVideoUrl(url);
+        const localCopy = findCompletedDownload(url);
 
-        if (isDirectVideo) {
+        if (isDirectVideo || localCopy) {
             embedContainer.classList.add('hidden');
             embedContainer.innerHTML = '';
             videoPlayer.classList.remove('hidden');
-            videoPlayer.src = url;
+            videoPlayer.src = localCopy ? localCopy.local_path : url;
             videoPlayer.load();
             if (isPlaying) {
                 videoPlayer.play().catch(e => console.log('Autoplay blocked initially', e));
             }
         } else {
-            // Embed or IFrame option
+            // No direct file and no local copy yet - kick off a background download so
+            // the app can automatically swap to a playable local copy the moment it's
+            // ready (Instagram in particular blocks most iframe embeds, so this is what
+            // actually gets it to play without you clicking "Save & Download" yourself).
+            ensureDownloaded(url, video.title);
+
+            // Embed or IFrame option (shown while the local copy downloads)
             videoPlayer.classList.add('hidden');
             videoPlayer.pause();
             embedContainer.classList.remove('hidden');
@@ -243,6 +324,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // Manually trigger the server to pull a fresh batch of motivational clips now
+    async function triggerFeedRefresh() {
+        showToast('Fetching fresh motivational clips...', 'info');
+        try {
+            const res = await fetch('/api/videos/refresh-feed', { method: 'POST' });
+            const data = await res.json();
+            if (res.ok) {
+                showToast(`${data.message} (+${data.added} new)`, 'success');
+                fetchPlaylist();
+            } else {
+                showToast(data.detail || 'Could not refresh feed', 'error');
+            }
+        } catch (err) {
+            showToast('Server connection error', 'error');
+        }
+    }
+
     // Fetch downloaded items
     async function fetchDownloads() {
         try {
@@ -250,6 +348,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (res.ok) {
                 downloads = await res.json();
                 renderDownloads();
+                maybeSwapInLocalCopy();
             }
         } catch (err) {
             console.error('Failed to load downloads', err);
