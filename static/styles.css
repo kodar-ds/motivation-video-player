@@ -432,13 +432,144 @@ video {
     }
 }
 
-/* Responsive adjustments */
+/* ============================================
+   Responsive adjustments
+   Breakpoints: tablet (≤1024px), mobile (≤768px), small phone (≤480px)
+   ============================================ */
+
+/* Tablet: stack sidebar under player, shrink player height */
 @media (max-width: 1024px) {
     .main-content {
         grid-template-columns: 1fr;
+        padding: 1rem;
+        gap: 1rem;
     }
     .player-wrapper {
-        height: 50vh;
-        max-height: 50vh;
+        height: 55vh;
+        max-height: 55vh;
+        min-height: 280px;
+    }
+    .quote-banner {
+        padding: 1.25rem 1rem;
+    }
+}
+
+/* Mobile phones: tighter spacing, wrap controls, shrink type */
+@media (max-width: 768px) {
+    .main-content {
+        padding: 0.75rem;
+        gap: 0.75rem;
+    }
+
+    .player-wrapper {
+        height: 42vh;
+        min-height: 220px;
+    }
+
+    .video-details {
+        padding: 1rem;
+    }
+
+    .video-details h2 {
+        font-size: 1.1rem;
+    }
+
+    .video-details p {
+        font-size: 0.85rem;
+    }
+
+    .video-controls {
+        padding: 0.75rem 1rem;
+        gap: 0.5rem;
+        justify-content: center;
+    }
+
+    .video-controls .btn {
+        flex: 1 1 calc(50% - 0.5rem);
+        justify-content: center;
+        padding: 0.6rem 0.75rem;
+        font-size: 0.85rem;
+    }
+
+    .sidebar-card {
+        padding: 1rem;
+    }
+
+    #quote-text {
+        font-size: 1.05rem;
+    }
+
+    #quote-author {
+        font-size: 0.8rem;
+        letter-spacing: 1px;
+    }
+
+    .download-title {
+        max-width: 130px;
+    }
+
+    /* Toasts span full width and sit centered above the thumb, not pinned to a
+       corner that's awkward to reach/read on a small screen */
+    .toast-container {
+        left: 12px;
+        right: 12px;
+        bottom: 12px;
+    }
+
+    .toast {
+        width: 100%;
+    }
+}
+
+/* Small phones: single-column control buttons, larger tap targets */
+@media (max-width: 480px) {
+    .quote-banner {
+        padding: 1rem 0.75rem;
+    }
+
+    #quote-text {
+        font-size: 0.95rem;
+    }
+
+    .player-wrapper {
+        height: 38vh;
+        min-height: 200px;
+    }
+
+    .video-controls .btn {
+        flex: 1 1 100%;
+        padding: 0.7rem;
+        font-size: 0.9rem;
+    }
+
+    .sidebar-card h3 {
+        font-size: 1rem;
+    }
+
+    .downloads-actions {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+
+    .downloads-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .download-title {
+        max-width: 110px;
+    }
+
+    .playlist-list,
+    .downloads-list {
+        max-height: 200px;
+    }
+}
+
+/* Landscape phones: player shouldn't eat the whole viewport height */
+@media (max-width: 900px) and (orientation: landscape) {
+    .player-wrapper {
+        height: 70vh;
+        min-height: 180px;
     }
 }

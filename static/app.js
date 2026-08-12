@@ -206,24 +206,19 @@ document.addEventListener('DOMContentLoaded', () => {
             videoPlayer.pause();
             embedContainer.classList.remove('hidden');
 
-            let embedHtml = '';
             if (url.includes('youtube.com') || url.includes('youtu.be')) {
-                let videoId = '';
-                if (url.includes('v=')) {
-                    videoId = url.split('v=')[1].split('&')[0];
-                } else if (url.includes('youtu.be/')) {
-                    videoId = url.split('youtu.be/')[1].split('?')[0];
-                }
-                embedHtml = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1&mute=0&enablejsapi=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+                // Use YouTube's official Player API (not a raw iframe) so we can
+                // detect when playback ends and auto-advance to the next video -
+                // otherwise the feed would just stall on the last YouTube clip.
+                playYouTubeEmbed(extractYouTubeId(url));
             } else if (url.includes('instagram.com')) {
                 // Strip query parameters to get clean base reel or post path
                 const cleanUrl = url.split('?')[0].replace(/\/+$/, '');
-                embedHtml = `<iframe src="${cleanUrl}/embed" width="100%" height="100%" frameborder="0" scrolling="no" allowtransparency="true"></iframe>`;
+                embedContainer.innerHTML = `<iframe src="${cleanUrl}/embed" width="100%" height="100%" frameborder="0" scrolling="no" allowtransparency="true"></iframe>`;
             } else {
                 // Catch all standard iframe embedding
-                embedHtml = `<iframe src="${url}" width="100%" height="100%" allow="autoplay"></iframe>`;
+                embedContainer.innerHTML = `<iframe src="${url}" width="100%" height="100%" allow="autoplay"></iframe>`;
             }
-            embedContainer.innerHTML = embedHtml;
         }
 
         // Update active class in playlist DOM list
@@ -233,8 +228,71 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // --- YouTube official Player API ---
+    // Loaded once so we can detect video-end events and auto-advance the feed,
+    // which a plain <iframe> embed can't tell us.
+    let ytPlayer = null;
+    let ytApiReady = false;
+
+    (function loadYouTubeIframeAPI() {
+        if (window.YT && window.YT.Player) {
+            ytApiReady = true;
+            return;
+        }
+        const tag = document.createElement('script');
+        tag.src = 'https://www.youtube.com/iframe_api';
+        document.head.appendChild(tag);
+        window.onYouTubeIframeAPIReady = () => { ytApiReady = true; };
+    })();
+
+    function extractYouTubeId(url) {
+        if (url.includes('v=')) return url.split('v=')[1].split('&')[0];
+        if (url.includes('youtu.be/')) return url.split('youtu.be/')[1].split('?')[0];
+        return '';
+    }
+
+    function playYouTubeEmbed(videoId) {
+        if (!videoId) return;
+        if (!ytApiReady || !window.YT || !window.YT.Player) {
+            // API script hasn't finished loading yet - show a plain iframe meanwhile
+            // and swap to the full player API once it's ready.
+            embedContainer.innerHTML = `<iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1" allow="autoplay; encrypted-media" allowfullscreen></iframe>`;
+            setTimeout(() => { if (ytApiReady) playYouTubeEmbed(videoId); }, 1000);
+            return;
+        }
+        embedContainer.innerHTML = '<div id="yt-player-target"></div>';
+        if (ytPlayer) {
+            ytPlayer.destroy();
+            ytPlayer = null;
+        }
+        ytPlayer = new YT.Player('yt-player-target', {
+            videoId,
+            playerVars: { autoplay: 1, playsinline: 1 },
+            events: {
+                onStateChange: (event) => {
+                    if (event.data === YT.PlayerState.ENDED) {
+                        playNext();
+                    }
+                }
+            }
+        });
+    }
+
     // Controls Action Handlers
     function togglePlay() {
+        if (ytPlayer && !embedContainer.classList.contains('hidden')) {
+            const state = ytPlayer.getPlayerState ? ytPlayer.getPlayerState() : null;
+            if (state === 1) {
+                ytPlayer.pauseVideo();
+                playPauseBtn.innerHTML = '<i class="fas fa-play"></i> Play';
+                isPlaying = false;
+            } else {
+                ytPlayer.playVideo();
+                playPauseBtn.innerHTML = '<i class="fas fa-pause"></i> Pause';
+                isPlaying = true;
+            }
+            return;
+        }
         if (videoPlayer.classList.contains('hidden')) {
             showToast('Playback controlled by embed player above', 'info');
             return;

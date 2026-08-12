@@ -115,10 +115,12 @@ DEFAULT_VIDEOS = [
 load_json_file(VIDEOS_FILE, DEFAULT_VIDEOS)
 load_json_file(DOWNLOADS_FILE, [])
 
-# --- Automatic motivational feed via Pexels (free, royalty-free stock video API) ---
+# --- Automatic motivational feed via Pexels + YouTube (official, legal sources) ---
 # This replaces manually pasting in video links: the server periodically searches
-# Pexels for motivational/success/workout footage and appends fresh clips straight
-# into videos.json on its own.
+# both APIs for motivational/success/workout content and appends fresh clips
+# straight into videos.json on its own.
+
+# Pexels: royalty-free stock footage, played as direct .mp4 files.
 PEXELS_API_KEY = os.environ.get("PEXELS_API_KEY", "").strip()
 PEXELS_SEARCH_TERMS = [
     "motivation",
@@ -128,8 +130,26 @@ PEXELS_SEARCH_TERMS = [
     "discipline hustle",
     "overcoming challenge",
 ]
-PEXELS_POLL_MINUTES = int(os.environ.get("PEXELS_POLL_MINUTES", "30"))
 PEXELS_PER_FETCH = int(os.environ.get("PEXELS_PER_FETCH", "4"))
+PEXELS_TERMS_PER_CYCLE = int(os.environ.get("PEXELS_TERMS_PER_CYCLE", "2"))
+
+# YouTube: real creator content, played via YouTube's official embedded player
+# (never downloaded - that's the sanctioned, ToS-compliant way to use their content).
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY", "").strip()
+YOUTUBE_SEARCH_TERMS = [
+    "motivational speech",
+    "morning motivation",
+    "success mindset speech",
+    "discipline motivation",
+    "overcome adversity speech",
+]
+YOUTUBE_PER_FETCH = int(os.environ.get("YOUTUBE_PER_FETCH", "4"))
+# YouTube's free quota is 10,000 units/day and a search costs 100 units, so we only
+# spend quota on 1 term per refresh cycle by default - plenty for steady growth
+# without risking exhausting the daily quota.
+YOUTUBE_TERMS_PER_CYCLE = int(os.environ.get("YOUTUBE_TERMS_PER_CYCLE", "1"))
+
+FEED_POLL_MINUTES = int(os.environ.get("FEED_POLL_MINUTES", os.environ.get("PEXELS_POLL_MINUTES", "45")))
 
 
 def fetch_pexels_clips(query: str, per_page: int = 4):
@@ -171,62 +191,115 @@ def fetch_pexels_clips(query: str, per_page: int = 4):
     return results
 
 
-def auto_populate_feed(per_term: int = None):
-    """Pull fresh clips for each search term and merge any new ones into the feed."""
-    per_term = per_term or PEXELS_PER_FETCH
+def fetch_youtube_clips(query: str, max_results: int = 4):
+    """Query YouTube's official Data API for embeddable videos matching a search term."""
+    if not YOUTUBE_API_KEY:
+        return []
+    try:
+        resp = requests.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params={
+                "part": "snippet",
+                "q": query,
+                "type": "video",
+                "maxResults": max_results,
+                "videoEmbeddable": "true",
+                "safeSearch": "strict",
+                "order": "relevance",
+                "key": YOUTUBE_API_KEY,
+            },
+            timeout=15,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as e:
+        logger.error(f"YouTube fetch failed for '{query}': {e}")
+        return []
+
+    results = []
+    for item in data.get("items", []):
+        video_id = item.get("id", {}).get("videoId")
+        if not video_id:
+            continue
+        snippet = item.get("snippet", {})
+        results.append({
+            "url": f"https://www.youtube.com/watch?v={video_id}",
+            "title": (snippet.get("title") or query.title())[:120],
+            "description": f"From {snippet.get('channelTitle', 'YouTube')} (search: {query}).",
+        })
+    return results
+
+
+def auto_populate_feed():
+    """Pull a fresh rotating batch of clips from each configured source and merge
+    any new ones into the feed. Only a subset of search terms run per cycle to
+    keep well within each API's free quota while still growing the feed steadily."""
     videos = load_json_file(VIDEOS_FILE, DEFAULT_VIDEOS)
     existing_urls = {v["url"] for v in videos}
     added = 0
-    for term in PEXELS_SEARCH_TERMS:
-        for clip in fetch_pexels_clips(term, per_page=per_term):
-            if clip["url"] in existing_urls:
-                continue
-            videos.append({
-                "id": str(uuid.uuid4()),
-                "url": clip["url"],
-                "title": clip["title"],
-                "description": clip["description"],
-            })
-            existing_urls.add(clip["url"])
-            added += 1
+
+    if PEXELS_API_KEY:
+        terms = random.sample(PEXELS_SEARCH_TERMS, min(PEXELS_TERMS_PER_CYCLE, len(PEXELS_SEARCH_TERMS)))
+        for term in terms:
+            for clip in fetch_pexels_clips(term, per_page=PEXELS_PER_FETCH):
+                if clip["url"] in existing_urls:
+                    continue
+                videos.append({"id": str(uuid.uuid4()), **clip})
+                existing_urls.add(clip["url"])
+                added += 1
+
+    if YOUTUBE_API_KEY:
+        terms = random.sample(YOUTUBE_SEARCH_TERMS, min(YOUTUBE_TERMS_PER_CYCLE, len(YOUTUBE_SEARCH_TERMS)))
+        for term in terms:
+            for clip in fetch_youtube_clips(term, max_results=YOUTUBE_PER_FETCH):
+                if clip["url"] in existing_urls:
+                    continue
+                videos.append({"id": str(uuid.uuid4()), **clip})
+                existing_urls.add(clip["url"])
+                added += 1
+
     if added:
         save_json_file(VIDEOS_FILE, videos)
-        logger.info(f"Auto-added {added} new motivational clips from Pexels.")
+        logger.info(f"Auto-added {added} new motivational clips.")
     return added
 
 
-async def pexels_background_loop():
+async def feed_background_loop():
     await asyncio.sleep(5)  # small delay so the app finishes booting first
     while True:
         try:
             auto_populate_feed()
         except Exception as e:
             logger.error(f"Background feed refresh failed: {e}")
-        await asyncio.sleep(PEXELS_POLL_MINUTES * 60)
+        await asyncio.sleep(FEED_POLL_MINUTES * 60)
 
 
 @app.on_event("startup")
 async def start_background_tasks():
-    if PEXELS_API_KEY:
-        asyncio.create_task(pexels_background_loop())
-        logger.info(f"Auto motivational feed enabled - refreshing every {PEXELS_POLL_MINUTES} min.")
+    if PEXELS_API_KEY or YOUTUBE_API_KEY:
+        asyncio.create_task(feed_background_loop())
+        sources = [s for s, k in [("Pexels", PEXELS_API_KEY), ("YouTube", YOUTUBE_API_KEY)] if k]
+        logger.info(f"Auto motivational feed enabled ({', '.join(sources)}) - refreshing every {FEED_POLL_MINUTES} min.")
     else:
         logger.warning(
-            "PEXELS_API_KEY is not set. Set it as an environment variable to enable the "
-            "automatic motivational video feed. Falling back to manually-added videos only."
+            "No PEXELS_API_KEY or YOUTUBE_API_KEY set. Set at least one as an environment "
+            "variable to enable the automatic motivational video feed. Falling back to "
+            "manually-added videos only."
         )
 
 
 @app.post("/api/videos/refresh-feed")
 def refresh_feed():
     """Manually trigger an immediate feed refresh instead of waiting for the timer."""
-    if not PEXELS_API_KEY:
+    if not PEXELS_API_KEY and not YOUTUBE_API_KEY:
         raise HTTPException(
             status_code=400,
-            detail="PEXELS_API_KEY is not configured on the server. Get a free key at pexels.com/api and set it as an environment variable."
+            detail="No feed source configured. Set PEXELS_API_KEY (pexels.com/api) and/or "
+                   "YOUTUBE_API_KEY (Google Cloud Console) as environment variables."
         )
     added = auto_populate_feed()
-    return {"message": "Fetched fresh motivational clips from Pexels", "added": added}
+    return {"message": "Fetched fresh motivational clips", "added": added}
+
 
 @app.get("/api/quote")
 def get_daily_quote():

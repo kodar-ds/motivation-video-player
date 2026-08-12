@@ -57,18 +57,26 @@ If you just want this playing on a second monitor or tablet at home to fuel your
 
 ---
 
-## 🎬 Automatic Motivational Feed (Pexels)
+## 🎬 Automatic Motivational Feed (Pexels + YouTube)
 
-The app can automatically fill your feed with royalty-free motivational/workout/success clips on its own — no manually pasted links needed.
+The app can automatically fill your feed with motivational content on its own — no manually pasted links needed. Two sources, use either or both:
 
-1. Get a free API key at [pexels.com/api](https://www.pexels.com/api/) (takes about a minute, no credit card).
-2. Set it as an environment variable named `PEXELS_API_KEY`:
-   - **On Render:** Dashboard → your service → **Environment** tab → **Add Environment Variable** → key `PEXELS_API_KEY`, value = your key.
-   - **Locally:** `export PEXELS_API_KEY=your_key_here` before running `uvicorn`.
-3. Restart/redeploy the service. On startup, the server begins pulling fresh clips every 30 minutes automatically (configurable via `PEXELS_POLL_MINUTES`).
-4. Use the **"Get More Motivation"** button in the app to trigger an immediate refresh instead of waiting.
+**Pexels** — royalty-free stock footage, played as direct video files.
+1. Get a free API key at [pexels.com/api](https://www.pexels.com/api/) (about a minute, no card).
+2. Set it as an environment variable named `PEXELS_API_KEY`.
 
-Without a key set, the app still works fine — it just falls back to only the default/manually-added videos.
+**YouTube** — real creator content (speeches, hype videos, etc.), played through YouTube's official embedded player.
+1. Go to [Google Cloud Console](https://console.cloud.google.com/), create a project (or use an existing one), enable the **YouTube Data API v3**, then create an API key under **Credentials**.
+2. Set it as an environment variable named `YOUTUBE_API_KEY`.
+   - Free quota is 10,000 units/day; each search costs 100 units. The app only spends ~100 units per refresh cycle by default, so this comfortably lasts all day even on frequent refreshes.
+
+**Setting environment variables:**
+- **On Render:** Dashboard → your service → **Environment** tab → **Add Environment Variable**.
+- **Locally:** `export PEXELS_API_KEY=your_key` / `export YOUTUBE_API_KEY=your_key` before running `uvicorn`.
+
+Restart/redeploy after setting either key. On startup, the server begins pulling fresh clips automatically every 45 minutes (configurable via `FEED_POLL_MINUTES`). Use the **"Get More Motivation"** button in the app to trigger an immediate refresh instead of waiting.
+
+Without either key set, the app still works fine — it just falls back to only the default/manually-added videos.
 
 ---
 
