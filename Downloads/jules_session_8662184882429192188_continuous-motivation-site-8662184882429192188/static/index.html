@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fuel Your Day - Continuous Motivation</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <!-- FontAwesome icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Daily Quote Top Banner -->
+        <header class="quote-banner">
+            <div id="quote-container">
+                <p id="quote-text">"Loading inspiration..."</p>
+                <p id="quote-author">— Loading</p>
+            </div>
+        </header>
+
+        <!-- Main Content Grid -->
+        <main class="main-content">
+            <!-- Left Panel: Video Player Section -->
+            <section class="player-section">
+                <div class="video-container">
+                    <div class="player-wrapper">
+                        <!-- Standard HTML5 Video Player -->
+                        <video id="motivational-video" controls autoplay playsinline loop></video>
+                        
+                        <!-- Fallback/Embed Container for non-mp4 direct URLs (e.g., YouTube embeds or Instagram embeds) -->
+                        <div id="embed-container" class="hidden"></div>
+                    </div>
+                    
+                    <!-- Video Details Overlay or Banner -->
+                    <div class="video-details">
+                        <h2 id="video-title">Loading Video Title...</h2>
+                        <p id="video-desc">Loading video description...</p>
+                    </div>
+
+                    <!-- Video Controls -->
+                    <div class="video-controls">
+                        <button id="prev-btn" class="btn" title="Previous Video">
+                            <i class="fas fa-step-backward"></i> Prev
+                        </button>
+                        <button id="play-pause-btn" class="btn" title="Play/Pause">
+                            <i class="fas fa-pause"></i> Play
+                        </button>
+                        <button id="next-btn" class="btn" title="Next Video">
+                            <i class="fas fa-step-forward"></i> Next
+                        </button>
+                        <button id="save-dl-btn" class="btn btn-save" title="Save and Download Video">
+                            <i class="fas fa-download"></i> Save & Download
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Right Panel: Side Controls and Galleries -->
+            <aside class="sidebar-section">
+                <!-- Add Custom Video Form -->
+                <div class="sidebar-card">
+                    <h3><i class="fas fa-plus-circle"></i> Add Motivational Video</h3>
+                    <form id="add-video-form">
+                        <div class="form-group">
+                            <label for="new-video-url">Video URL (Instagram, YouTube, or MP4 link)</label>
+                            <input type="url" id="new-video-url" placeholder="https://instagram.com/reel/..." required>
+                        </div>
+                        <div class="form-group">
+                            <label for="new-video-title">Title (Optional)</label>
+                            <input type="text" id="new-video-title" placeholder="e.g., Never Give Up">
+                        </div>
+                        <button type="submit" class="btn btn-primary btn-block">Add Video</button>
+                    </form>
+                </div>
+
+                <!-- Saved / Downloaded Gallery -->
+                <div class="sidebar-card downloads-card">
+                    <h3><i class="fas fa-folder-open"></i> Saved Downloads</h3>
+                    <div class="downloads-actions">
+                        <button id="refresh-downloads" class="btn btn-sm"><i class="fas fa-sync"></i> Refresh</button>
+                        <button id="clear-failed-btn" class="btn btn-sm btn-danger"><i class="fas fa-trash"></i> Clean Failed</button>
+                    </div>
+                    <div id="downloads-list" class="downloads-list">
+                        <!-- Populated by JS -->
+                        <p class="empty-msg">No saved videos yet.</p>
+                    </div>
+                </div>
+
+                <!-- Video Feed List -->
+                <div class="sidebar-card playlist-card">
+                    <h3><i class="fas fa-list"></i> Current Playlist Feed</h3>
+                    <div id="playlist-list" class="playlist-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </aside>
+        </main>
+    </div>
+
+    <!-- Notification system -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
