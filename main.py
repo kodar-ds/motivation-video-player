@@ -348,26 +348,34 @@ def download_video_task(url: str, custom_title: str):
     logger.info(f"Starting download for: {url}")
     
     downloads = load_json_file(DOWNLOADS_FILE, [])
-    
-    # Check if already downloaded
-    for dl in downloads:
-        if dl["url"] == url and dl["status"] == "completed":
-            logger.info("Video already successfully downloaded.")
-            return
 
-    # Prepare temp item with status 'downloading'
-    download_id = str(uuid.uuid4())
+    # Find any existing record for this URL (regardless of status) so retries
+    # UPDATE that record instead of piling up duplicate entries every time.
+    existing_idx = None
+    for i, dl in enumerate(downloads):
+        if dl["url"] == url:
+            if dl["status"] == "completed":
+                logger.info("Video already successfully downloaded.")
+                return
+            existing_idx = i
+            break
+
+    download_id = downloads[existing_idx]["id"] if existing_idx is not None else str(uuid.uuid4())
+    fallback_title = downloads[existing_idx]["title"] if existing_idx is not None else f"Downloading {datetime.date.today()}"
     temp_item = {
         "id": download_id,
         "url": url,
-        "title": custom_title or f"Downloading {datetime.date.today()}",
+        "title": custom_title or fallback_title,
         "filename": "",
         "local_path": "",
         "status": "downloading",
         "timestamp": datetime.datetime.now().isoformat(),
         "error": None
     }
-    downloads.append(temp_item)
+    if existing_idx is not None:
+        downloads[existing_idx] = temp_item
+    else:
+        downloads.append(temp_item)
     save_json_file(DOWNLOADS_FILE, downloads)
 
     # If it is a direct MP4 link, we can use a simpler request mechanism as a fallback/primary

@@ -44,7 +44,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function isAlreadyTrackedDownload(url) {
-        return downloads.some(dl => dl.url === url && (dl.status === 'completed' || dl.status === 'downloading'));
+        // Once we've attempted a URL (success, in-progress, OR failed) don't let the
+        // automatic background prefetch keep re-triggering it every cycle - that was
+        // hammering broken links (e.g. Instagram links yt-dlp can't fetch without
+        // login cookies) forever. Manual retry is still available via the
+        // "Save & Download" button, which calls the API directly.
+        return downloads.some(dl => dl.url === url && (dl.status === 'completed' || dl.status === 'downloading' || dl.status === 'failed'));
     }
 
     async function ensureDownloaded(url, title) {
